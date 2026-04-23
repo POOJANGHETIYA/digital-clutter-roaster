@@ -7,9 +7,13 @@ import { HowItWorksPage } from "./pages/HowItWorksPage";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 
+import { OSWarning } from "./components/OSWarning";
+
 export function App() {
   return (
-    <Routes>
+    <>
+      <OSWarning />
+      <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/scan" element={<ScanPage />} />
       <Route path="/results" element={<ResultsPage />} />
@@ -17,6 +21,7 @@ export function App() {
       <Route path="/how-it-works" element={<HowItWorksPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="*" element={<NotFoundPage />} />
-    </Routes>
+      </Routes>
+    </>
   );
 }
