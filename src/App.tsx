@@ -1,4 +1,5 @@
 import { Routes, Route } from "react-router";
+import { Analytics } from "@vercel/analytics/react";
 import { HomePage } from "./pages/HomePage";
 import { ScanPage } from "./pages/ScanPage";
 import { ResultsPage } from "./pages/ResultsPage";
