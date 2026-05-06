@@ -14,4 +14,9 @@ export default defineConfig({
     sourcemap: false,
     minify: "esbuild",
   },
+  preview: {
+    allowedHosts: ["endocrinous-foreign-darlena.ngrok-free.dev"],
+    host: "localhost",
+    port: 4173,
+  },
 });
