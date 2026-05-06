@@ -55,7 +55,7 @@ export function OSWarning() {
     else if (/Linux/i.test(ua)) currentOS = "Linux";
 
     // 2. Refinement for "Desktop Mode" on mobile
-    const uad = (navigator as any).userAgentData;
+    const uad = (navigator as Navigator & { userAgentData?: { platform?: string; mobile?: boolean } }).userAgentData;
     if (uad) {
       const brandPlatform = uad.platform?.toLowerCase();
       if (brandPlatform?.includes("android")) currentOS = "Android";
