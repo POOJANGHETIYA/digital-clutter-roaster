@@ -77,12 +77,16 @@ const ARCHETYPES: Archetype[] = [
     blurb: "Why have one copy when you could have four? Final_v2_FINAL energy.",
     match: (i) => i.duplicates.length * 5,
     lines: (i) => {
-      const waste = i.duplicates.reduce((s, d) => s + d.totalWaste, 0);
+      const waste = i.duplicates.reduce((s, d) => s + d.reclaimableBytes, 0);
+      const exactCount = i.duplicates.filter((d) => d.strength === "exact").length;
       return [
         `${i.duplicates.length} duplicate clusters. The same bytes living different lives.`,
+        exactCount > 0
+          ? `${exactCount} of those are content-verified exact duplicates. No excuses.`
+          : `None of them are doing anything useful.`,
         `${formatBytes(waste)} of pure redundancy.`,
         `You are not archiving. You are avoiding decisions.`,
-      ];
+      ].filter(Boolean);
     },
   },
   {
@@ -160,7 +164,9 @@ function closingLine(score: number): string {
 function buildIntervention(i: RoastInput): string {
   const steps: string[] = [];
   if (i.devJunk.length) steps.push("nuke build/node_modules folders");
-  if (i.duplicates.length) steps.push("review duplicate clusters");
+  const exactDups = i.duplicates.filter((d) => d.strength === "exact");
+  if (exactDups.length > 0) steps.push(`delete ${exactDups.length} verified exact duplicate${exactDups.length > 1 ? "s" : ""}`);
+  else if (i.duplicates.length) steps.push("review duplicate clusters");
   const arch = i.categories.find((c) => c.id === "archives");
   if (arch && arch.size > 500_000_000) steps.push("delete old DMGs and installers");
   const screenshots = i.categories.find((c) => c.id === "screenshots");

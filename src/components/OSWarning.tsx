@@ -115,9 +115,9 @@ export function OSWarning() {
       "demo",
     );
     
-    setTimeout(() => {
+    setTimeout(async () => {
       const files = buildDemoFiles();
-      const result = analyze(files, "Demo Mac (~/)", performance.now() - start);
+      const result = await analyze(files, "Demo Mac (~/)", performance.now() - start);
       setResult(result, "demo");
       navigate("/results");
     }, 800);

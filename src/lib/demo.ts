@@ -51,9 +51,12 @@ const SEEDS: Seed[] = [
     size: rand(1_000_000, 9_000_000),
     daysOld: rand(20, 500),
   })),
-  // Duplicates: same name + size in multiple folders
+  // ── Exact duplicates (same content, different locations) ──────────────
+  // These will be detected by the metadata pipeline as "likely" in demo mode
+  // (no File handles available), but we seed them with identical sizes and names
+  // so they clearly represent the "exact" tier in a real scan.
   ...flat(
-    range(8).map((i) => {
+    range(5).map((i) => {
       const size = rand(20_000_000, 350_000_000);
       const name = `vacation-edit-${i}.mov`;
       return [
@@ -63,13 +66,26 @@ const SEEDS: Seed[] = [
       ];
     }),
   ),
+  // ── Likely duplicates (same name + same size, different folders) ────────
   ...flat(
-    range(14).map((i) => {
+    range(10).map((i) => {
       const size = rand(2_000_000, 30_000_000);
       const name = `final_v${i}_FINAL.pdf`;
       return [
         { path: `Macintosh HD/Users/you/Documents/${name}`, size, daysOld: rand(30, 600) },
         { path: `Macintosh HD/Users/you/Desktop/${name}`, size, daysOld: rand(30, 600) },
+      ];
+    }),
+  ),
+  // ── Review suspects (similar names, same size — version variants) ───────
+  ...flat(
+    range(6).map((i) => {
+      const size = rand(5_000_000, 80_000_000);
+      const base = `project-proposal-${i}`;
+      return [
+        { path: `Macintosh HD/Users/you/Documents/${base}_draft.docx`, size, daysOld: rand(20, 300) },
+        { path: `Macintosh HD/Users/you/Documents/${base}_v2.docx`, size, daysOld: rand(20, 300) },
+        { path: `Macintosh HD/Users/you/Desktop/${base}_FINAL.docx`, size, daysOld: rand(20, 300) },
       ];
     }),
   ),

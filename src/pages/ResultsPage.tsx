@@ -1,10 +1,12 @@
 import { Link, useNavigate } from "react-router";
 import { useEffect } from "react";
-import { ArrowRight, Clock, Copy, Cpu, Download, FileText, Flame, Folder, HardDrive, ListChecks, ScanSearch, Sparkles } from "lucide-react";
+import { ArrowRight, Clock, Copy, Cpu, Download, FileText, Flame, Folder, HardDrive, ListChecks, ScanSearch, Sparkles, ShieldCheck, AlertTriangle, Eye } from "lucide-react";
 import { SiteHeader, SiteFooter } from "@/components/SiteShell";
 import { useScanStore } from "@/store/scan";
 import { formatBytes, formatNumber, formatRelative } from "@/lib/format";
 import { downloadText, exportJson, exportMarkdown } from "@/lib/export";
+import { countByStrength, reclaimableByStrength } from "@/lib/duplicates";
+import type { DuplicateGroup, DuplicateMatchStrength } from "@/lib/types";
 
 export function ResultsPage() {
   const navigate = useNavigate();
@@ -164,23 +166,7 @@ export function ResultsPage() {
           </div>
           <div>
             <SectionHeader kicker="Duplicates" title="Same bytes, different excuse" icon={Copy} />
-            <div className="panel mt-4">
-              {r.duplicates.length === 0 && <div className="p-6 text-sm text-muted-foreground">No duplicate clusters found.</div>}
-              <ul className="divide-y divide-border">
-                {r.duplicates.slice(0, 10).map((d) => (
-                  <li key={d.key} className="p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="truncate font-mono text-xs">{d.files[0]?.name ?? "-"}</div>
-                      <div className="font-display text-sm font-semibold text-ember">{formatBytes(d.totalWaste)}</div>
-                    </div>
-                    <div className="mt-1 flex items-center gap-2 text-[10px] uppercase tracking-widest text-muted-foreground">
-                      <span className="rounded border border-border px-1.5 py-0.5">{d.confidence}</span>
-                      <span>{d.count} copies · {formatBytes(d.size)} each</span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <DuplicatesPanel duplicates={r.duplicates} />
           </div>
         </section>
 
@@ -274,6 +260,141 @@ function ScoreRing({ score }: { score: number }) {
         <circle cx="22" cy="22" r={r} stroke="currentColor" className="text-ember" strokeWidth="4" strokeLinecap="round" fill="none" strokeDasharray={c} strokeDashoffset={off} />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center font-display text-xs font-semibold">{score}</div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Verified Duplicate Detection Panel
+// ---------------------------------------------------------------------------
+
+const STRENGTH_CONFIG: Record<
+  DuplicateMatchStrength,
+  {
+    label: string;
+    sublabel: string;
+    icon: typeof ShieldCheck;
+    iconClass: string;
+    badgeClass: string;
+  }
+> = {
+  exact: {
+    label: "Exact duplicates",
+    sublabel: "Verified by content",
+    icon: ShieldCheck,
+    iconClass: "text-success",
+    badgeClass: "border-success/40 bg-success/10 text-success",
+  },
+  likely: {
+    label: "Likely duplicates",
+    sublabel: "Strong match, review recommended",
+    icon: AlertTriangle,
+    iconClass: "text-warning",
+    badgeClass: "border-warning/40 bg-warning/10 text-warning",
+  },
+  suspect: {
+    label: "Review suspects",
+    sublabel: "Similar files, manual check needed",
+    icon: Eye,
+    iconClass: "text-muted-foreground",
+    badgeClass: "border-border bg-surface text-muted-foreground",
+  },
+};
+
+function DuplicatesPanel({ duplicates }: { duplicates: DuplicateGroup[] }) {
+  if (duplicates.length === 0) {
+    return (
+      <div className="panel mt-4 p-6 text-sm text-muted-foreground">
+        No duplicate clusters found.
+      </div>
+    );
+  }
+
+  const counts = countByStrength(duplicates);
+  const reclaim = reclaimableByStrength(duplicates);
+
+  const tiers: DuplicateMatchStrength[] = ["exact", "likely", "suspect"];
+
+  return (
+    <div className="mt-4 space-y-4">
+      {/* Summary row */}
+      <div className="panel grid grid-cols-3 divide-x divide-border">
+        {tiers.map((tier) => {
+          const cfg = STRENGTH_CONFIG[tier];
+          const Icon = cfg.icon;
+          return (
+            <div key={tier} className="p-4">
+              <div className="flex items-center gap-1.5">
+                <Icon className={`h-3.5 w-3.5 ${cfg.iconClass}`} />
+                <span className="font-display text-xs font-semibold">{cfg.label}</span>
+              </div>
+              <div className="mt-0.5 text-[11px] text-muted-foreground">{cfg.sublabel}</div>
+              <div className="mt-2 font-display text-xl font-semibold">{counts[tier]}</div>
+              <div className="text-xs text-muted-foreground">{formatBytes(reclaim[tier])} reclaimable</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Per-tier group lists */}
+      {tiers.map((tier) => {
+        const groups = duplicates.filter((d) => d.strength === tier);
+        if (groups.length === 0) return null;
+        const cfg = STRENGTH_CONFIG[tier];
+        const Icon = cfg.icon;
+        return (
+          <div key={tier} className="panel overflow-hidden">
+            <div className="flex items-center gap-2 border-b border-border bg-surface-2 px-4 py-2.5">
+              <Icon className={`h-3.5 w-3.5 ${cfg.iconClass}`} />
+              <span className="font-display text-sm font-semibold">{cfg.label}</span>
+              <span className={`ml-auto rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-widest ${cfg.badgeClass}`}>
+                {cfg.sublabel}
+              </span>
+            </div>
+            <ul className="divide-y divide-border">
+              {groups.slice(0, 8).map((d) => (
+                <li key={d.id} className="p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate font-mono text-xs">{d.files[0]?.name ?? "—"}</div>
+                      <div className="mt-0.5 text-[11px] text-muted-foreground">{d.explanation}</div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="font-display text-sm font-semibold text-ember">
+                        {formatBytes(d.reclaimableBytes)}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {d.fileCount} copies · {formatBytes(d.totalBytes)} each
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {d.files.slice(0, 3).map((f) => (
+                      <span
+                        key={f.id}
+                        className="max-w-[220px] truncate rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+                        title={f.path}
+                      >
+                        {f.path.split("/").slice(-3).join("/")}
+                      </span>
+                    ))}
+                    {d.files.length > 3 && (
+                      <span className="rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                        +{d.files.length - 3} more
+                      </span>
+                    )}
+                  </div>
+                </li>
+              ))}
+              {groups.length > 8 && (
+                <li className="px-4 py-2.5 text-xs text-muted-foreground">
+                  +{groups.length - 8} more {cfg.label.toLowerCase()} — export the report for the full list.
+                </li>
+              )}
+            </ul>
+          </div>
+        );
+      })}
     </div>
   );
 }
