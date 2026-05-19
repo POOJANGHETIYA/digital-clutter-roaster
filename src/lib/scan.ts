@@ -50,8 +50,9 @@ export async function pickDirectory(): Promise<FSDirHandle | null> {
 export async function enumerateDirectory(
   handle: FSDirHandle,
   onProgress?: ProgressCallback,
-): Promise<FileNode[]> {
+): Promise<{ files: FileNode[]; fileHandleMap: Map<string, File> }> {
   const out: FileNode[] = [];
+  const fileHandleMap = new Map<string, File>();
   let files = 0;
   let folders = 0;
   let bytes = 0;
@@ -104,6 +105,8 @@ export async function enumerateDirectory(
             devJunkKind,
           };
           out.push(node);
+          // Store the File object keyed by path for content hashing
+          fileHandleMap.set(path, file);
           files++;
           bytes += file.size;
           if (files % 200 === 0) {
@@ -133,5 +136,5 @@ export async function enumerateDirectory(
     bytesScanned: bytes,
     flavor: "Wrapping up the investigation…",
   });
-  return out;
+  return { files: out, fileHandleMap };
 }

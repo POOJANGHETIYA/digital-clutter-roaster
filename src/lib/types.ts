@@ -38,13 +38,60 @@ export interface FolderSummary {
   depth: number;
 }
 
+// ---------------------------------------------------------------------------
+// Verified Duplicate Detection – v0.2.0
+// ---------------------------------------------------------------------------
+
+/** How strongly we believe these files are duplicates. */
+export type DuplicateMatchStrength = "exact" | "likely" | "suspect";
+
+/**
+ * What evidence was used to classify the group.
+ * - full-hash   : SHA-256 of the entire file content (exact only)
+ * - partial-hash: SHA-256 of the first 64 KB (narrows candidates)
+ * - metadata    : same size + same name (likely)
+ * - filename-pattern: similar name, same size (suspect)
+ */
+export type DuplicateVerificationMethod =
+  | "full-hash"
+  | "partial-hash"
+  | "metadata"
+  | "filename-pattern";
+
 export interface DuplicateGroup {
-  key: string;
-  size: number;
-  count: number;
-  totalWaste: number; // size * (count - 1)
-  confidence: "exact" | "likely" | "name";
+  /** Stable identifier for this group. */
+  id: string;
+  /** Duplicate strength tier. */
+  strength: DuplicateMatchStrength;
+  /** Evidence method used to classify this group. */
+  verificationMethod: DuplicateVerificationMethod;
+  /** IDs of the FileNode members. */
+  fileIds: string[];
+  /** Convenience copy of the FileNode objects. */
   files: FileNode[];
+  fileCount: number;
+  /** Byte size of one copy. */
+  totalBytes: number;
+  /** Bytes that could be freed by keeping one copy. */
+  reclaimableBytes: number;
+  sharedExtension?: string | null;
+  sharedSizeBytes?: number | null;
+  /** 0–1 confidence score. */
+  confidenceScore: number;
+  /** Human-readable explanation shown in the UI. */
+  explanation: string;
+
+  // ── Legacy compat fields (kept so existing roast/export code compiles) ──
+  /** @deprecated use `id` */
+  key: string;
+  /** @deprecated use `totalBytes` */
+  size: number;
+  /** @deprecated use `fileCount` */
+  count: number;
+  /** @deprecated use `reclaimableBytes` */
+  totalWaste: number;
+  /** @deprecated use `strength` */
+  confidence: DuplicateMatchStrength | "name";
 }
 
 export interface CategoryBreakdown {

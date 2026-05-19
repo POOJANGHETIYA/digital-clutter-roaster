@@ -9,6 +9,7 @@ import type {
   ScanResult,
 } from "./types";
 import { generateRoast } from "./roast";
+import { detectDuplicates } from "./duplicates";
 
 const STALE_DAYS = 180;
 const STALE_MS = STALE_DAYS * 86400_000;
@@ -28,7 +29,12 @@ const CATEGORY_META: Record<ClutterCategoryId, { label: string; description: str
   other: { label: "Other", description: "Uncategorized files" },
 };
 
-export function analyze(files: FileNode[], rootName: string, durationMs: number): ScanResult {
+export async function analyze(
+  files: FileNode[],
+  rootName: string,
+  durationMs: number,
+  precomputedDuplicates?: DuplicateGroup[],
+): Promise<ScanResult> {
   const now = Date.now();
   const folders = new Map<string, FolderSummary>();
 
@@ -80,8 +86,9 @@ export function analyze(files: FileNode[], rootName: string, durationMs: number)
     .filter((c) => c.count > 0)
     .sort((a, b) => b.size - a.size);
 
-  // Duplicates: group by size+name (likely) and same size only (suspect)
-  const duplicates = detectDuplicates(files);
+  // Duplicates: use the new three-tier verified pipeline (sync metadata-only path)
+  // The async content-hashing path is triggered from ScanPage when File handles are available.
+  const duplicates = precomputedDuplicates ?? await detectDuplicates(files);
 
   // Dev junk clusters: collapse by top-most matching dir
   const devJunk = detectDevJunkClusters(files);
@@ -91,7 +98,7 @@ export function analyze(files: FileNode[], rootName: string, durationMs: number)
   const staleBytes = staleFiles.reduce((s, f) => s + f.size, 0);
 
   // Reclaimable: dev junk + duplicate waste + stale archives in downloads
-  const dupWaste = duplicates.reduce((s, d) => s + d.totalWaste, 0);
+  const dupWaste = duplicates.reduce((s, d) => s + d.reclaimableBytes, 0);
   const devJunkBytes = devJunk.reduce((s, d) => s + d.size, 0);
   const staleArchiveBytes = staleFiles
     .filter((f) => f.category === "archives" || f.category === "downloads")
@@ -145,58 +152,6 @@ export function analyze(files: FileNode[], rootName: string, durationMs: number)
     files,
     folders: [...folders.values()],
   };
-}
-
-function detectDuplicates(files: FileNode[]): DuplicateGroup[] {
-  const bySize = new Map<number, FileNode[]>();
-  for (const f of files) {
-    if (f.size < 256 * 1024) continue; // ignore <256KB to avoid noise
-    if (f.isDevJunk) continue;
-    const arr = bySize.get(f.size) ?? [];
-    arr.push(f);
-    bySize.set(f.size, arr);
-  }
-  const groups: DuplicateGroup[] = [];
-  for (const [size, arr] of bySize) {
-    if (arr.length < 2) continue;
-    // Sub-group by name for higher-confidence "likely" duplicates
-    const byName = new Map<string, FileNode[]>();
-    for (const f of arr) {
-      const k = f.name.toLowerCase();
-      const list = byName.get(k) ?? [];
-      list.push(f);
-      byName.set(k, list);
-    }
-    for (const [name, list] of byName) {
-      if (list.length >= 2) {
-        groups.push({
-          key: `${size}:${name}`,
-          size,
-          count: list.length,
-          totalWaste: size * (list.length - 1),
-          confidence: "likely",
-          files: list,
-        });
-      }
-    }
-    // Same size, different names → suspects
-    const matchedIds = new Set(
-      [...byName.values()].filter((l) => l.length >= 2).flatMap((l) => l.map((f) => f.id)),
-    );
-    const remaining = arr.filter((f) => !matchedIds.has(f.id));
-    if (remaining.length >= 2) {
-      groups.push({
-        key: `size:${size}`,
-        size,
-        count: remaining.length,
-        totalWaste: size * (remaining.length - 1),
-        confidence: "name",
-        files: remaining,
-      });
-    }
-  }
-  groups.sort((a, b) => b.totalWaste - a.totalWaste);
-  return groups.slice(0, 50);
 }
 
 function detectDevJunkClusters(files: FileNode[]): DevJunkCluster[] {
@@ -303,16 +258,26 @@ function buildCleanupPlan(args: {
   }
 
   // Medium effort
-  const topDups = args.duplicates.slice(0, 10);
+  const exactDups = args.duplicates.filter((d) => d.strength === "exact");
+  const likelyDups = args.duplicates.filter((d) => d.strength === "likely");
+  const topDups = [...exactDups, ...likelyDups].slice(0, 10);
   if (topDups.length > 0) {
+    const exactCount = exactDups.length;
+    const title =
+      exactCount > 0
+        ? `Review ${topDups.length} duplicate cluster${topDups.length > 1 ? "s" : ""} (${exactCount} verified exact)`
+        : `Review ${topDups.length} duplicate cluster${topDups.length > 1 ? "s" : ""}`;
     out.push({
       id: "medium-duplicates",
-      level: "medium",
-      title: `Review ${topDups.length} duplicate cluster${topDups.length > 1 ? "s" : ""}`,
-      why: "Same file, multiple homes. Pick the canonical copy and delete the rest.",
-      estimatedBytes: topDups.reduce((s, d) => s + d.totalWaste, 0),
-      confidence: "medium",
-      safety: "needs-review",
+      level: exactCount > 0 ? "quick" : "medium",
+      title,
+      why:
+        exactCount > 0
+          ? "Content-verified exact duplicates found. Safe to keep one copy and delete the rest."
+          : "Same file, multiple homes. Pick the canonical copy and delete the rest.",
+      estimatedBytes: topDups.reduce((s, d) => s + d.reclaimableBytes, 0),
+      confidence: exactCount > 0 ? "high" : "medium",
+      safety: exactCount > 0 ? "generally-safe" : "needs-review",
       targetCategory: "duplicates",
     });
   }

@@ -6,6 +6,7 @@ import { useScanStore } from "@/store/scan";
 import { enumerateDirectory, isFsAccessSupported, pickDirectory } from "@/lib/scan";
 import { analyze } from "@/lib/analyze";
 import { buildDemoFiles } from "@/lib/demo";
+import { detectDuplicates } from "@/lib/duplicates";
 
 export function ScanPage() {
   const navigate = useNavigate();
@@ -23,13 +24,36 @@ export function ScanPage() {
       "live",
     );
     try {
-      const files = await enumerateDirectory(handle, (p) => setProgress(p));
+      const { files, fileHandleMap } = await enumerateDirectory(handle, (p) => setProgress(p));
       setProgress({
         phase: "analyzing", filesScanned: files.length, foldersScanned: 0,
         bytesScanned: files.reduce((s, f) => s + f.size, 0), flavor: "Cross-referencing your bad habits…",
       });
       await new Promise((r) => setTimeout(r, 80));
-      const result = analyze(files, handle.name, performance.now() - start);
+
+      // Run content-hash duplicate detection with progress updates
+      setProgress({
+        phase: "duplicates",
+        filesScanned: files.length,
+        foldersScanned: 0,
+        bytesScanned: files.reduce((s, f) => s + f.size, 0),
+        flavor: "Verifying duplicate content hashes…",
+      });
+      const verifiedDuplicates = await detectDuplicates(
+        files,
+        fileHandleMap,
+        (done, total) => {
+          setProgress({
+            phase: "duplicates",
+            filesScanned: files.length,
+            foldersScanned: 0,
+            bytesScanned: files.reduce((s, f) => s + f.size, 0),
+            flavor: `Hashing candidates… ${done}/${total}`,
+          });
+        },
+      );
+
+      const result = await analyze(files, handle.name, performance.now() - start, verifiedDuplicates);
       setResult(result, "live");
       navigate("/results");
     } catch (e) {
@@ -45,9 +69,9 @@ export function ScanPage() {
       { phase: "analyzing", filesScanned: 0, foldersScanned: 0, bytesScanned: 0, flavor: "Loading a fictional but very real-feeling Mac…" },
       "demo",
     );
-    setTimeout(() => {
+    setTimeout(async () => {
       const files = buildDemoFiles();
-      const result = analyze(files, "Demo Mac (~/)", performance.now() - start);
+      const result = await analyze(files, "Demo Mac (~/)", performance.now() - start);
       setResult(result, "demo");
       navigate("/results");
     }, 600);
